@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { dispatchInboundToAiReply } from "@/lib/ai/auto-reply";
 import { saveLeadIntent } from "@/lib/web-chat/intent";
 import { syncLeadToPipeline } from "@/lib/web-chat/pipeline";
+import { captureConversationalLead } from "@/lib/web-chat/lead-capture";
 
 function adminClient() {
   return createClient(
@@ -93,6 +94,14 @@ export async function POST(request: Request) {
   }).eq("id", conversationId);
 
   const intent = await saveLeadIntent(supabase, conversationId!, text);
+  const leadState = await captureConversationalLead({
+    db: supabase,
+    widgetId: widget.id,
+    visitorId: visitor?.id ?? null,
+    contactId: contactId!,
+    text,
+    intent: intent.intent,
+  });
 
   const { data: account } = await supabase
     .from("accounts")
@@ -115,6 +124,7 @@ export async function POST(request: Request) {
       conversationId: conversationId!,
       contactId: contactId!,
       configOwnerUserId: account.owner_user_id,
+      leadCaptureState: leadState,
     });
   }
 
