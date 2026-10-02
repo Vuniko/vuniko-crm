@@ -54,19 +54,24 @@ export default function BookingsPage() {
 
   async function updateStatus(id: string, status: 'confirmed' | 'cancelled') {
     setUpdatingId(id);
-    const { error } = await supabase
-      .from('booking_requests')
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq('id', id);
+    try {
+      const response = await fetch('/api/bookings/status', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, status }),
+      });
+      const result = await response.json().catch(() => null) as { error?: string; notified?: boolean } | null;
+      if (!response.ok) throw new Error(result?.error || 'Could not update booking');
 
-    if (error) {
-      toast.error('No se pudo actualizar la reserva');
-      console.error('[bookings] update failed:', error);
-    } else {
       setBookings((current) => current.map((booking) => booking.id === id ? { ...booking, status } : booking));
-      toast.success(status === 'confirmed' ? 'Reserva confirmada' : 'Reserva cancelada');
+      const label = status === 'confirmed' ? 'Reserva confirmada' : 'Reserva cancelada';
+      toast.success(result?.notified === false ? `${label}. No se pudo enviar el aviso al chat.` : `${label} y cliente avisado`);
+    } catch (error) {
+      console.error('[bookings] update failed:', error);
+      toast.error('No se pudo actualizar la reserva');
+    } finally {
+      setUpdatingId(null);
     }
-    setUpdatingId(null);
   }
 
   const pending = bookings.filter((b) => b.status === 'pending_confirmation').length;
