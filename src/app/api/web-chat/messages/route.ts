@@ -94,6 +94,17 @@ export async function POST(request: Request) {
   }).eq("id", conversationId);
 
   const intent = await saveLeadIntent(supabase, conversationId!, text);
+
+  // An explicit request for a person must stop automation immediately.
+  // Leave the thread unassigned so any available agent can claim it from
+  // the shared inbox; a configured AI handoff target may assign it later.
+  if (intent.intent === "human") {
+    await supabase.from("conversations").update({
+      ai_autoreply_disabled: true,
+      ai_handoff_summary: "Customer explicitly asked to speak with a person.",
+    }).eq("id", conversationId);
+  }
+
   const leadState = await captureConversationalLead({
     db: supabase,
     widgetId: widget.id,
@@ -119,7 +130,7 @@ export async function POST(request: Request) {
       intent: intent.intent,
     });
 
-    void dispatchInboundToAiReply({
+    if (intent.intent !== "human") void dispatchInboundToAiReply({
       accountId: widget.account_id,
       conversationId: conversationId!,
       contactId: contactId!,
