@@ -83,7 +83,7 @@ export async function dispatchInboundToAiReply(
 
     const { data: conv, error: convErr } = await db
       .from('conversations')
-      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count')
+      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count, channel')
       .eq('id', conversationId)
       .maybeSingle()
     if (convErr || !conv) return
@@ -203,14 +203,32 @@ export async function dispatchInboundToAiReply(
     }
     if (claimed !== true) return // lost the per-conversation cap race
 
-    await engineSendText({
-      accountId,
-      userId: configOwnerUserId,
-      conversationId,
-      contactId,
-      text,
-      aiGenerated: true,
-    })
+    if (conv.channel === 'web') {
+      const now = new Date().toISOString()
+      const { error: sendErr } = await db.from('messages').insert({
+        conversation_id: conversationId,
+        sender_type: 'bot',
+        content_type: 'text',
+        content_text: text,
+        status: 'sent',
+        ai_generated: true,
+      })
+      if (sendErr) throw sendErr
+      await db.from('conversations').update({
+        last_message_text: text,
+        last_message_at: now,
+        updated_at: now,
+      }).eq('id', conversationId)
+    } else {
+      await engineSendText({
+        accountId,
+        userId: configOwnerUserId,
+        conversationId,
+        contactId,
+        text,
+        aiGenerated: true,
+      })
+    }
   } catch (err) {
     console.error('[ai auto-reply] dispatch failed:', err)
   }
