@@ -25,7 +25,7 @@ export const HANDOFF_SENTINEL = '[[HANDOFF]]'
 
 /** Cap on generated reply length — keeps WhatsApp replies short and
  *  bounds token spend on the caller's own key. */
-export const MAX_OUTPUT_TOKENS = 384
+export const MAX_OUTPUT_TOKENS = 600
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
 const DEFAULT_CONTEXT_MESSAGE_LIMIT = 20
