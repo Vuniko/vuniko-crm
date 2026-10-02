@@ -112,6 +112,57 @@ export async function POST(request: Request) {
     }).eq("id", conversationId);
   }
 
+  // Catalog questions should never depend on the AI provider.
+  // Answer directly from the business service catalog for speed/reliability.
+  const catalogIntent = /(?:precio|precios|cu[aá]nto|cuesta|servicio|servicios)/i.test(text)
+    && !/(?:reserv|turno|cita|agend)/i.test(text);
+  let catalogReplied = false;
+  if (catalogIntent && intent.intent !== "human") {
+    const { data: services } = await supabase
+      .from("booking_services")
+      .select("name, price, duration_minutes")
+      .eq("account_id", widget.account_id)
+      .eq("is_active", true)
+      .order("position")
+      .order("name");
+
+    if (services?.length) {
+      const replyText = "Estos son nuestros servicios:\n" + services
+        .map((service) => {
+          const price = Number(service.price);
+          const formattedPrice = price.toFixed(price % 1 ? 2 : 0);
+          return `• ${service.name} — S/ ${formattedPrice} — ${service.duration_minutes} min`;
+        })
+        .join("\n") + "\n\nSi querés, también puedo ayudarte a reservar un turno.";
+
+      const { data: catalogReply, error: catalogReplyError } = await supabase
+        .from("messages")
+        .insert({
+          conversation_id: conversationId,
+          sender_type: "bot",
+          content_type: "text",
+          content_text: replyText,
+          status: "sent",
+          ai_generated: false,
+        })
+        .select("id, sender_type, content_type, content_text, created_at")
+        .single();
+
+      if (!catalogReplyError && catalogReply) {
+        catalogReplied = true;
+        const replyAt = catalogReply.created_at ?? new Date().toISOString();
+        await supabase.from("conversations").update({
+          last_message_text: replyText,
+          last_message_at: replyAt,
+          updated_at: replyAt,
+        }).eq("id", conversationId);
+        await broadcastWebChatMessage(conversationId!, catalogReply);
+      } else {
+        console.error("[web-chat] deterministic catalog reply failed:", catalogReplyError);
+      }
+    }
+  }
+
   const bookingState = await advanceBookingRequest({
     db: supabase,
     accountId: widget.account_id,
@@ -179,7 +230,7 @@ export async function POST(request: Request) {
       intent: intent.intent,
     });
 
-    if (intent.intent !== "human" && !bookingReplied) {
+    if (intent.intent !== "human" && !bookingReplied && !catalogReplied) {
       after(async () => {
         try {
           await dispatchInboundToAiReply({
