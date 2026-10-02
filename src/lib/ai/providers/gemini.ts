@@ -17,13 +17,19 @@ interface GeminiResponse {
   }
 }
 
-export async function generateGemini(args: ProviderArgs): Promise<ProviderResult> {
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504])
+const RETRY_DELAYS_MS = [250, 700]
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function requestGemini(args: ProviderArgs): Promise<Response> {
   const { apiKey, model, systemPrompt, messages, timeoutMs } = args
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`
 
-  let res: Response
   try {
-    res = await fetch(url, {
+    return await fetch(url, {
       method: 'POST',
       headers: {
         'x-goog-api-key': apiKey,
@@ -41,6 +47,17 @@ export async function generateGemini(args: ProviderArgs): Promise<ProviderResult
     })
   } catch (err) {
     throw toNetworkError(err)
+  }
+}
+
+export async function generateGemini(args: ProviderArgs): Promise<ProviderResult> {
+  let res = await requestGemini(args)
+
+  for (let attempt = 0; !res.ok && RETRYABLE_STATUSES.has(res.status) && attempt < RETRY_DELAYS_MS.length; attempt += 1) {
+    // Consume the failed response before retrying so the connection can be reused.
+    await res.text().catch(() => undefined)
+    await sleep(RETRY_DELAYS_MS[attempt])
+    res = await requestGemini(args)
   }
 
   if (!res.ok) throw await providerHttpError('Gemini', res)
