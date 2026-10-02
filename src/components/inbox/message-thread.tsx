@@ -234,6 +234,9 @@ export function MessageThread({
 
   // 24-hour session timer
   const sessionInfo = useMemo(() => {
+    // The 24-hour customer-care window is a WhatsApp/Meta restriction,
+    // not a rule for VUNIKO's first-party web chat.
+    if (conversation?.channel === "web") return { expired: false, remaining: "" };
     if (!messages.length) return { expired: false, remaining: "" };
 
     // Find last customer message
@@ -257,7 +260,7 @@ export function MessageThread({
         : tTimer("xmRemaining", { minutes: Math.floor(hoursLeft * 60) });
 
     return { expired, remaining };
-  }, [messages, tTimer]);
+  }, [messages, tTimer, conversation?.channel]);
 
   // Store latest callback in a ref so fetchMessages doesn't need to
   // depend on `onMessagesLoaded` — otherwise parent re-renders cause
@@ -932,7 +935,7 @@ export function MessageThread({
           </div>
           {/* Session timer badge — hidden on the narrowest phones so
               the name + back arrow keep their room. */}
-          <Badge
+          {conversation.channel !== "web" && <Badge
             variant="outline"
             className={cn(
               "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-2",
@@ -941,7 +944,7 @@ export function MessageThread({
           >
             <Clock className="h-3 w-3" />
             {sessionInfo.remaining}
-          </Badge>
+          </Badge>}
         </div>
 
         <div className="flex items-center gap-2">
@@ -1191,11 +1194,11 @@ export function MessageThread({
         onClearReply={() => setReplyTo(null)}
       />
 
-      <TemplatePicker
+      {conversation.channel !== "web" && <TemplatePicker
         open={templateModalOpen}
         onOpenChange={setTemplateModalOpen}
         onSelect={handleSendTemplate}
-      />
+      />}
 
       {/* Full-size viewer for the thread's images/videos. Renders nothing
           until a bubble opens it. */}
