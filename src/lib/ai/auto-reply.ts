@@ -8,6 +8,7 @@ import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
 import { loadBusinessProfileContext } from './business-profile'
+import { leadCapturePrompt, type LeadState } from '@/lib/web-chat/lead-capture'
 import {
   engineSendText,
   loadAccountMetaCredentials,
@@ -27,6 +28,7 @@ interface DispatchArgs {
    *  a typing indicator (which also marks it read) is shown while the
    *  reply is generated. Optional so older callers keep working. */
   inboundMessageId?: string
+  leadCaptureState?: LeadState
 }
 
 /**
@@ -57,6 +59,7 @@ export async function dispatchInboundToAiReply(
     contactId,
     configOwnerUserId,
     inboundMessageId,
+    leadCaptureState,
   } = args
 
   try {
@@ -132,7 +135,10 @@ export async function dispatchInboundToAiReply(
     )
 
     const businessProfile = await loadBusinessProfileContext(db, accountId)
-    const userPrompt = [config.systemPrompt, businessProfile]
+    const capturePrompt = conv.channel === 'web' && leadCaptureState
+      ? leadCapturePrompt(leadCaptureState)
+      : null
+    const userPrompt = [config.systemPrompt, businessProfile, capturePrompt]
       .filter((part): part is string => Boolean(part?.trim()))
       .join('\n\n')
 
