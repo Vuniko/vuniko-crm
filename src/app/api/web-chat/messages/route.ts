@@ -1,164 +1,230 @@
-import { createHash, randomBytes } from "crypto";
-import { NextResponse, after } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { dispatchInboundToAiReply } from "@/lib/ai/auto-reply";
-import { saveLeadIntent } from "@/lib/web-chat/intent";
-import { syncLeadToPipeline } from "@/lib/web-chat/pipeline";
-import { captureConversationalLead } from "@/lib/web-chat/lead-capture";
-import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
-import { advanceBookingRequest } from "@/lib/web-chat/booking";
-import { broadcastWebChatMessage } from "@/lib/web-chat/realtime";
+import { createHash, randomBytes } from 'crypto';
+import { NextResponse, after } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
+import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply';
+import { saveLeadIntent } from '@/lib/web-chat/intent';
+import { syncLeadToPipeline } from '@/lib/web-chat/pipeline';
+import { captureConversationalLead } from '@/lib/web-chat/lead-capture';
+import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit';
+import { advanceBookingRequest } from '@/lib/web-chat/booking';
+import {
+  broadcastWebChatMessage,
+  webChatRealtimeTopic,
+  type WebChatRealtimeMessage,
+} from '@/lib/web-chat/realtime';
 
 function adminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { persistSession: false } },
+    { auth: { persistSession: false } }
   );
 }
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as { widgetKey?: string; text?: string; visitorToken?: string };
+  const body = (await request.json()) as {
+    widgetKey?: string;
+    text?: string;
+    visitorToken?: string;
+  };
   const text = body.text?.trim();
   if (!body.widgetKey || !text || text.length > 4000) {
-    return NextResponse.json({ error: "Invalid message" }, { status: 400 });
+    return NextResponse.json({ error: 'Invalid message' }, { status: 400 });
   }
 
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-  const visitorRate = checkRateLimit(`web-chat:${ip}:${body.widgetKey}`, { limit: 20, windowMs: 60_000 });
+  const ip =
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  const visitorRate = checkRateLimit(`web-chat:${ip}:${body.widgetKey}`, {
+    limit: 20,
+    windowMs: 60_000,
+  });
   if (!visitorRate.success) return rateLimitResponse(visitorRate);
 
   const supabase = adminClient();
   const { data: widget } = await supabase
-    .from("web_chat_widgets")
-    .select("id, account_id, is_enabled")
-    .eq("public_key", body.widgetKey)
+    .from('web_chat_widgets')
+    .select('id, account_id, is_enabled')
+    .eq('public_key', body.widgetKey)
     .maybeSingle();
 
-  if (!widget?.is_enabled) return NextResponse.json({ error: "Widget unavailable" }, { status: 404 });
+  if (!widget?.is_enabled)
+    return NextResponse.json({ error: 'Widget unavailable' }, { status: 404 });
 
-  const visitorToken = body.visitorToken || randomBytes(24).toString("hex");
-  const tokenHash = createHash("sha256").update(visitorToken).digest("hex");
+  const visitorToken = body.visitorToken || randomBytes(24).toString('hex');
+  const tokenHash = createHash('sha256').update(visitorToken).digest('hex');
 
   const { data: visitor } = await supabase
-    .from("web_chat_visitors")
-    .select("id, contact_id, conversation_id")
-    .eq("widget_id", widget.id)
-    .eq("visitor_token_hash", tokenHash)
+    .from('web_chat_visitors')
+    .select('id, contact_id, conversation_id')
+    .eq('widget_id', widget.id)
+    .eq('visitor_token_hash', tokenHash)
     .maybeSingle();
 
   let contactId = visitor?.contact_id ?? null;
   let conversationId = visitor?.conversation_id ?? null;
 
   if (!contactId) {
-    const { data: owner } = await supabase.from("accounts").select("owner_user_id").eq("id", widget.account_id).single();
-    if (!owner) return NextResponse.json({ error: "Account unavailable" }, { status: 404 });
-    const { data: contact, error } = await supabase.from("contacts").insert({
-      account_id: widget.account_id,
-      user_id: owner.owner_user_id,
-      phone: "",
-      name: "Website visitor",
-    }).select("id").single();
-    if (error || !contact) return NextResponse.json({ error: "Could not create visitor" }, { status: 500 });
+    const { data: owner } = await supabase
+      .from('accounts')
+      .select('owner_user_id')
+      .eq('id', widget.account_id)
+      .single();
+    if (!owner)
+      return NextResponse.json(
+        { error: 'Account unavailable' },
+        { status: 404 }
+      );
+    const { data: contact, error } = await supabase
+      .from('contacts')
+      .insert({
+        account_id: widget.account_id,
+        user_id: owner.owner_user_id,
+        phone: '',
+        name: 'Website visitor',
+      })
+      .select('id')
+      .single();
+    if (error || !contact)
+      return NextResponse.json(
+        { error: 'Could not create visitor' },
+        { status: 500 }
+      );
     contactId = contact.id;
 
-    const { data: conversation, error: convError } = await supabase.from("conversations").insert({
-      account_id: widget.account_id,
-      user_id: owner.owner_user_id,
-      contact_id: contactId,
-      channel: "web",
-      status: "open",
-    }).select("id").single();
-    if (convError || !conversation) return NextResponse.json({ error: "Could not create conversation" }, { status: 500 });
+    const { data: conversation, error: convError } = await supabase
+      .from('conversations')
+      .insert({
+        account_id: widget.account_id,
+        user_id: owner.owner_user_id,
+        contact_id: contactId,
+        channel: 'web',
+        status: 'open',
+      })
+      .select('id')
+      .single();
+    if (convError || !conversation)
+      return NextResponse.json(
+        { error: 'Could not create conversation' },
+        { status: 500 }
+      );
     conversationId = conversation.id;
 
-    await supabase.from("web_chat_visitors").upsert({
-      widget_id: widget.id,
-      account_id: widget.account_id,
-      contact_id: contactId,
-      conversation_id: conversationId,
-      visitor_token_hash: tokenHash,
-      last_seen_at: new Date().toISOString(),
-    }, { onConflict: "widget_id,visitor_token_hash" });
+    await supabase.from('web_chat_visitors').upsert(
+      {
+        widget_id: widget.id,
+        account_id: widget.account_id,
+        contact_id: contactId,
+        conversation_id: conversationId,
+        visitor_token_hash: tokenHash,
+        last_seen_at: new Date().toISOString(),
+      },
+      { onConflict: 'widget_id,visitor_token_hash' }
+    );
   }
 
   const now = new Date().toISOString();
-  const { data: message, error: messageError } = await supabase.from("messages").insert({
-    conversation_id: conversationId,
-    sender_type: "customer",
-    content_type: "text",
-    content_text: text,
-    status: "delivered",
-  }).select("id, created_at").single();
+  const { data: message, error: messageError } = await supabase
+    .from('messages')
+    .insert({
+      conversation_id: conversationId,
+      sender_type: 'customer',
+      content_type: 'text',
+      content_text: text,
+      status: 'delivered',
+    })
+    .select('id, sender_type, content_type, content_text, created_at')
+    .single();
 
-  if (messageError) return NextResponse.json({ error: "Could not send message" }, { status: 500 });
+  if (messageError || !message)
+    return NextResponse.json(
+      { error: 'Could not send message' },
+      { status: 500 }
+    );
+  const replies: WebChatRealtimeMessage[] = [];
 
-  await supabase.from("conversations").update({
-    last_message_text: text,
-    last_message_at: now,
-    updated_at: now,
-    unread_count: 1,
-  }).eq("id", conversationId);
+  await supabase
+    .from('conversations')
+    .update({
+      last_message_text: text,
+      last_message_at: now,
+      updated_at: now,
+      unread_count: 1,
+    })
+    .eq('id', conversationId);
 
   const intent = await saveLeadIntent(supabase, conversationId!, text);
 
   // An explicit request for a person must stop automation immediately.
   // Leave the thread unassigned so any available agent can claim it from
   // the shared inbox; a configured AI handoff target may assign it later.
-  if (intent.intent === "human") {
-    await supabase.from("conversations").update({
-      ai_autoreply_disabled: true,
-      ai_handoff_summary: "Customer explicitly asked to speak with a person.",
-    }).eq("id", conversationId);
+  if (intent.intent === 'human') {
+    await supabase
+      .from('conversations')
+      .update({
+        ai_autoreply_disabled: true,
+        ai_handoff_summary: 'Customer explicitly asked to speak with a person.',
+      })
+      .eq('id', conversationId);
   }
 
   // Catalog questions should never depend on the AI provider.
   // Answer directly from the business service catalog for speed/reliability.
-  const catalogIntent = /(?:precio|precios|cu[aá]nto|cuesta|servicio|servicios)/i.test(text)
-    && !/(?:reserv|turno|cita|agend)/i.test(text);
+  const catalogIntent =
+    /(?:precio|precios|cu[aá]nto|cuesta|servicio|servicios)/i.test(text) &&
+    !/(?:reserv|turno|cita|agend)/i.test(text);
   let catalogReplied = false;
-  if (catalogIntent && intent.intent !== "human") {
+  if (catalogIntent && intent.intent !== 'human') {
     const { data: services } = await supabase
-      .from("booking_services")
-      .select("name, price, duration_minutes")
-      .eq("account_id", widget.account_id)
-      .eq("is_active", true)
-      .order("position")
-      .order("name");
+      .from('booking_services')
+      .select('name, price, duration_minutes')
+      .eq('account_id', widget.account_id)
+      .eq('is_active', true)
+      .order('position')
+      .order('name');
 
     if (services?.length) {
-      const replyText = "Estos son nuestros servicios:\n" + services
-        .map((service) => {
-          const price = Number(service.price);
-          const formattedPrice = price.toFixed(price % 1 ? 2 : 0);
-          return `• ${service.name} — S/ ${formattedPrice} — ${service.duration_minutes} min`;
-        })
-        .join("\n") + "\n\nSi querés, también puedo ayudarte a reservar un turno.";
+      const replyText =
+        'Estos son nuestros servicios:\n' +
+        services
+          .map((service) => {
+            const price = Number(service.price);
+            const formattedPrice = price.toFixed(price % 1 ? 2 : 0);
+            return `• ${service.name} — S/ ${formattedPrice} — ${service.duration_minutes} min`;
+          })
+          .join('\n') +
+        '\n\nSi querés, también puedo ayudarte a reservar un turno.';
 
       const { data: catalogReply, error: catalogReplyError } = await supabase
-        .from("messages")
+        .from('messages')
         .insert({
           conversation_id: conversationId,
-          sender_type: "bot",
-          content_type: "text",
+          sender_type: 'bot',
+          content_type: 'text',
           content_text: replyText,
-          status: "sent",
+          status: 'sent',
           ai_generated: false,
         })
-        .select("id, sender_type, content_type, content_text, created_at")
+        .select('id, sender_type, content_type, content_text, created_at')
         .single();
 
       if (!catalogReplyError && catalogReply) {
         catalogReplied = true;
+        replies.push(catalogReply);
         const replyAt = catalogReply.created_at ?? new Date().toISOString();
-        await supabase.from("conversations").update({
-          last_message_text: replyText,
-          last_message_at: replyAt,
-          updated_at: replyAt,
-        }).eq("id", conversationId);
+        await supabase
+          .from('conversations')
+          .update({
+            last_message_text: replyText,
+            last_message_at: replyAt,
+            updated_at: replyAt,
+          })
+          .eq('id', conversationId);
         await broadcastWebChatMessage(conversationId!, catalogReply);
       } else {
-        console.error("[web-chat] deterministic catalog reply failed:", catalogReplyError);
+        console.error(
+          '[web-chat] deterministic catalog reply failed:',
+          catalogReplyError
+        );
       }
     }
   }
@@ -185,52 +251,70 @@ export async function POST(request: Request) {
   // the LLM. This keeps the flow fast and available even if the AI provider
   // is overloaded.
   let bookingReplied = false;
-  if (bookingState.active && intent.intent !== "human" && bookingState.nextQuestion) {
+  if (
+    bookingState.active &&
+    intent.intent !== 'human' &&
+    bookingState.nextQuestion
+  ) {
     const replyText = bookingState.nextQuestion;
     const { data: bookingReply, error: bookingReplyError } = await supabase
-      .from("messages")
+      .from('messages')
       .insert({
         conversation_id: conversationId,
-        sender_type: "bot",
-        content_type: "text",
+        sender_type: 'bot',
+        content_type: 'text',
         content_text: replyText,
-        status: "sent",
+        status: 'sent',
         ai_generated: false,
       })
-      .select("id, sender_type, content_type, content_text, created_at")
+      .select('id, sender_type, content_type, content_text, created_at')
       .single();
 
     if (!bookingReplyError && bookingReply) {
       bookingReplied = true;
+      replies.push(bookingReply);
       const replyAt = bookingReply.created_at ?? new Date().toISOString();
-      await supabase.from("conversations").update({
-        last_message_text: replyText,
-        last_message_at: replyAt,
-        updated_at: replyAt,
-      }).eq("id", conversationId);
+      await supabase
+        .from('conversations')
+        .update({
+          last_message_text: replyText,
+          last_message_at: replyAt,
+          updated_at: replyAt,
+        })
+        .eq('id', conversationId);
       await broadcastWebChatMessage(conversationId!, bookingReply);
     } else {
-      console.error("[web-chat] deterministic booking reply failed:", bookingReplyError);
+      console.error(
+        '[web-chat] deterministic booking reply failed:',
+        bookingReplyError
+      );
     }
   }
 
   const { data: account } = await supabase
-    .from("accounts")
-    .select("owner_user_id")
-    .eq("id", widget.account_id)
+    .from('accounts')
+    .select('owner_user_id')
+    .eq('id', widget.account_id)
     .single();
 
   if (account?.owner_user_id) {
-    await syncLeadToPipeline({
-      db: supabase,
-      accountId: widget.account_id,
-      ownerUserId: account.owner_user_id,
-      conversationId: conversationId!,
-      contactId: contactId!,
-      intent: intent.intent,
+    // CRM bookkeeping must not hold up the visitor's response or AI dispatch.
+    after(async () => {
+      try {
+        await syncLeadToPipeline({
+          db: supabase,
+          accountId: widget.account_id,
+          ownerUserId: account.owner_user_id,
+          conversationId: conversationId!,
+          contactId: contactId!,
+          intent: intent.intent,
+        });
+      } catch (error) {
+        console.error('[web-chat] pipeline sync failed:', error);
+      }
     });
 
-    if (intent.intent !== "human" && !bookingReplied && !catalogReplied) {
+    if (intent.intent !== 'human' && !bookingReplied && !catalogReplied) {
       after(async () => {
         try {
           await dispatchInboundToAiReply({
@@ -242,11 +326,18 @@ export async function POST(request: Request) {
             bookingState,
           });
         } catch (error) {
-          console.error("[web-chat] AI auto-reply failed:", error);
+          console.error('[web-chat] AI auto-reply failed:', error);
         }
       });
     }
   }
 
-  return NextResponse.json({ ok: true, visitorToken, conversationId, message });
+  return NextResponse.json({
+    ok: true,
+    visitorToken,
+    conversationId,
+    message,
+    replies,
+    realtimeTopic: webChatRealtimeTopic(conversationId!),
+  });
 }
