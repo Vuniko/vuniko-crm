@@ -173,6 +173,8 @@ export interface Conversation {
   user_id: string;
   contact_id: string;
   status: ConversationStatus;
+  /** Transport used by this thread. Defaults to WhatsApp for legacy rows. */
+  channel?: "whatsapp" | "web";
   assigned_agent_id?: string;
   last_message_text?: string;
   last_message_at?: string;
