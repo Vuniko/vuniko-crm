@@ -83,11 +83,9 @@ export default function WebChatPage({
     return () => { void supabase.removeChannel(channel); };
   }, [realtimeTopic]);
 
-  async function sendMessage(event: FormEvent) {
-    event.preventDefault();
-    const text = draft.trim();
-    if (!text) return;
-    setDraft("");
+  async function sendText(text: string) {
+    if (!text.trim()) return;
+    setWaitingForReply(true);
 
     const response = await fetch("/api/web-chat/messages", {
       method: "POST",
@@ -103,6 +101,21 @@ export default function WebChatPage({
     }
     await refresh();
   }
+
+  async function sendMessage(event: FormEvent) {
+    event.preventDefault();
+    const text = draft.trim();
+    if (!text) return;
+    setDraft("");
+    await sendText(text);
+  }
+
+  const quickActions = [
+    { label: "✂️ Servicios", message: "Quiero conocer los servicios." },
+    { label: "💰 Precios", message: "Quiero conocer los precios." },
+    { label: "📅 Reservar", message: "Quiero reservar un turno." },
+    { label: "👤 Hablar con alguien", message: "Quiero hablar con una persona." },
+  ];
 
   if (!open) {
     return (
