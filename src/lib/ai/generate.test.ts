@@ -192,3 +192,63 @@ describe('generateReply — Anthropic', () => {
     expect(body.messages).toHaveLength(1)
   })
 })
+
+
+describe('generateReply — Gemini', () => {
+  it('calls generateContent with system instruction, chat roles, and usage', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({
+        candidates: [{ content: { parts: [{ text: 'Hola desde Gemini' }] } }],
+        usageMetadata: {
+          promptTokenCount: 20,
+          candidatesTokenCount: 5,
+          totalTokenCount: 25,
+        },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await generateReply({
+      config: config({ provider: 'gemini', model: 'gemini-test', apiKey: 'AIza-test' }),
+      systemPrompt: 'Eres el asistente de VUNIKO.',
+      messages: [
+        { role: 'user', content: 'Hola' },
+        { role: 'assistant', content: 'Hola, ¿en qué te ayudo?' },
+        { role: 'user', content: 'Quiero reservar' },
+      ],
+    })
+
+    expect(res).toEqual({
+      text: 'Hola desde Gemini',
+      handoff: false,
+      usage: { promptTokens: 20, completionTokens: 5, totalTokens: 25 },
+    })
+    const [url, opts] = fetchMock.mock.calls[0]
+    expect(url).toContain('generativelanguage.googleapis.com')
+    expect(url).toContain('gemini-test:generateContent')
+    expect(opts.headers['x-goog-api-key']).toBe('AIza-test')
+    const body = JSON.parse(opts.body)
+    expect(body.systemInstruction.parts[0].text).toBe('Eres el asistente de VUNIKO.')
+    expect(body.contents.map((item: { role: string }) => item.role)).toEqual([
+      'user',
+      'model',
+      'user',
+    ])
+  })
+
+  it('maps Gemini auth errors to invalid_key', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        errResponse(403, { error: { message: 'API key not valid' } }),
+      ),
+    )
+    await expect(
+      generateReply({
+        config: config({ provider: 'gemini', model: 'gemini-test' }),
+        systemPrompt: 'sys',
+        messages: [{ role: 'user', content: 'Hola' }],
+      }),
+    ).rejects.toMatchObject({ code: 'invalid_key', status: 401 })
+  })
+})
