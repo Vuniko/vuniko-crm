@@ -134,10 +134,13 @@ export function AiThreadBanner({
     [conversationId, currentUserId, onChange, t],
   );
 
-  // Account has no auto-reply → nothing to show. (Still loading → nothing.)
-  if (!autoReplyOn) return null;
+  // A paused/handoff thread must remain visible even if the account-level
+  // AI config is currently off or unavailable; otherwise an agent could
+  // receive a human request with no explanation or takeover state.
+  // Only hide an idle banner when auto-reply is not configured.
+  if (!autoReplyOn && !paused) return null;
 
-  // Paused here (a human took over, or the model handed off).
+  // Paused here (a human took over, or the model/customer handed off).
   if (paused) {
     return (
       <Banner tone="muted">
