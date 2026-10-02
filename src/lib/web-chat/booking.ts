@@ -70,14 +70,14 @@ export async function advanceBookingRequest(args:{db:Db;accountId:string;convers
   else if(!row.customer_name&&!phoneLike.test(clean))row.customer_name=clean;
   else if(!row.customer_phone&&phoneLike.test(clean))row.customer_phone=clean.match(phoneLike)?.[0]??clean;
 
-  let availabilityVerified=false; let alternatives:string[]=[];
+  let availabilityVerified=false; let alternatives:string[]=[]; let availabilityRejected=false;
   if(row.requested_date&&row.requested_time){
     const date=normalizeDate(row.requested_date); const time=normalizeTime(row.requested_time);
     if(date&&time){
       row.requested_date=date; row.requested_time=time;
       const availability=await checkAvailability(db,accountId,date,time,conversationId);
       availabilityVerified=availability.available; alternatives=availability.alternatives;
-      if(!availabilityVerified) row.requested_time=null;
+      if(!availabilityVerified) { availabilityRejected=true; row.requested_time=null; }
     }
   }
 
@@ -88,8 +88,9 @@ export async function advanceBookingRequest(args:{db:Db;accountId:string;convers
   let nextQuestion:string|null=null;
   if(!row.service)nextQuestion='¿Qué servicio querés reservar?';
   else if(!row.requested_date)nextQuestion='¿Para qué día te gustaría?';
-  else if(!row.requested_time&&alternatives.length)nextQuestion=`Ese horario no está disponible. Tengo libres: ${alternatives.join(', ')}. ¿Cuál preferís?`;
-  else if(!row.requested_time)nextQuestion='Ese horario no está disponible. ¿Qué otro horario preferís?';
+  else if(!row.requested_time&&availabilityRejected&&alternatives.length)nextQuestion=`Ese horario no está disponible. Tengo libres: ${alternatives.join(', ')}. ¿Cuál preferís?`;
+  else if(!row.requested_time&&availabilityRejected)nextQuestion='Ese horario no está disponible. ¿Qué otro horario preferís?';
+  else if(!row.requested_time)nextQuestion='¿Qué horario preferís?';
   else if(!row.customer_name)nextQuestion='Perfecto. ¿Cuál es tu nombre?';
   else if(!row.customer_phone)nextQuestion='¿Cuál es tu teléfono o WhatsApp para contactarte?';
   else nextQuestion='Listo. El horario está disponible y registré tu solicitud. El negocio debe confirmarla para que el turno quede confirmado.';
