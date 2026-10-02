@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Check, Clock3, Loader2, Phone, Scissors, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, List, Loader2, Phone, Scissors, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -31,6 +31,8 @@ export default function BookingsPage() {
   const [bookings, setBookings] = useState<BookingRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [view, setView] = useState<'list' | 'agenda'>('list');
+  const [weekOffset, setWeekOffset] = useState(0);
 
   const loadBookings = useCallback(async () => {
     setLoading(true);
@@ -77,6 +79,31 @@ export default function BookingsPage() {
   const pending = bookings.filter((b) => b.status === 'pending_confirmation').length;
   const confirmed = bookings.filter((b) => b.status === 'confirmed').length;
 
+  const weekDays = useMemo(() => {
+    const today = new Date();
+    const start = new Date(today);
+    const day = (today.getDay() + 6) % 7;
+    start.setDate(today.getDate() - day + weekOffset * 7);
+    start.setHours(0, 0, 0, 0);
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(start);
+      date.setDate(start.getDate() + index);
+      return date;
+    });
+  }, [weekOffset]);
+
+  function bookingDate(value: string | null): Date | null {
+    if (!value) return null;
+    const iso = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(value + 'T12:00:00') : new Date(value);
+    return Number.isNaN(iso.getTime()) ? null : iso;
+  }
+
+  function sameDay(a: Date, b: Date) {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  }
+
+  const agendaBookings = bookings.filter((booking) => booking.status !== 'cancelled' && bookingDate(booking.requested_date));
+
   return (
     <div className="space-y-6 p-4 sm:p-6">
       <div>
@@ -90,6 +117,67 @@ export default function BookingsPage() {
         <SummaryCard label="Confirmadas" value={confirmed} icon={<Check className="size-4" />} />
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex rounded-lg border border-border bg-card p-1">
+          <Button size="sm" variant={view === 'list' ? 'default' : 'ghost'} onClick={() => setView('list')}>
+            <List className="size-4" /> Lista
+          </Button>
+          <Button size="sm" variant={view === 'agenda' ? 'default' : 'ghost'} onClick={() => setView('agenda')}>
+            <CalendarDays className="size-4" /> Agenda
+          </Button>
+        </div>
+        {view === 'agenda' && (
+          <div className="flex items-center gap-2">
+            <Button size="icon-sm" variant="outline" onClick={() => setWeekOffset((v) => v - 1)}><ChevronLeft className="size-4" /></Button>
+            <Button size="sm" variant="outline" onClick={() => setWeekOffset(0)}>Hoy</Button>
+            <Button size="icon-sm" variant="outline" onClick={() => setWeekOffset((v) => v + 1)}><ChevronRight className="size-4" /></Button>
+          </div>
+        )}
+      </div>
+
+      {view === 'agenda' && !loading ? (
+        <div className="grid gap-3 lg:grid-cols-7">
+          {weekDays.map((day) => {
+            const dayBookings = agendaBookings
+              .filter((booking) => {
+                const date = bookingDate(booking.requested_date);
+                return date ? sameDay(date, day) : false;
+              })
+              .sort((a, b) => (a.requested_time || '').localeCompare(b.requested_time || ''));
+            const isToday = sameDay(day, new Date());
+            return (
+              <div key={day.toISOString()} className={`min-h-40 rounded-xl border bg-card p-3 ${isToday ? 'border-primary' : 'border-border'}`}>
+                <div className="mb-3">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">{day.toLocaleDateString('es-PE', { weekday: 'short' })}</p>
+                  <p className={`text-lg font-semibold ${isToday ? 'text-primary' : 'text-foreground'}`}>{day.getDate()}</p>
+                </div>
+                <div className="space-y-2">
+                  {dayBookings.length === 0 ? <p className="text-xs text-muted-foreground">Sin turnos</p> : dayBookings.map((booking) => {
+                    const meta = statusMeta[booking.status];
+                    const busy = updatingId === booking.id;
+                    return (
+                      <div key={booking.id} className="rounded-lg border border-border bg-background p-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="text-sm font-semibold text-foreground">{booking.requested_time || 'Sin hora'}</span>
+                          <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${meta.className}`}>{meta.label}</span>
+                        </div>
+                        <p className="mt-1 truncate text-sm font-medium text-foreground">{booking.customer_name || 'Cliente'}</p>
+                        <p className="truncate text-xs text-muted-foreground">{booking.service || 'Servicio pendiente'}</p>
+                        {booking.status === 'pending_confirmation' && (
+                          <div className="mt-2 flex gap-1">
+                            <Button size="sm" className="h-7 flex-1 px-2 text-xs" disabled={busy} onClick={() => updateStatus(booking.id, 'confirmed')}><Check className="size-3" /> Confirmar</Button>
+                            <Button size="icon-sm" variant="outline" className="size-7" disabled={busy} onClick={() => updateStatus(booking.id, 'cancelled')}><X className="size-3" /></Button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
       <div className="overflow-hidden rounded-xl border border-border bg-card">
         {loading ? (
           <div className="flex min-h-52 items-center justify-center gap-2 text-sm text-muted-foreground">
@@ -138,6 +226,7 @@ export default function BookingsPage() {
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
