@@ -14,7 +14,7 @@ import {
   loadAccountMetaCredentials,
 } from '@/lib/flows/meta-send'
 import { sendTypingIndicator } from '@/lib/whatsapp/meta-api'
-import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'\nimport { broadcastWebChatMessage } from '@/lib/web-chat/realtime'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -217,7 +217,7 @@ export async function dispatchInboundToAiReply(
 
     if (conv.channel === 'web') {
       const now = new Date().toISOString()
-      const { error: sendErr } = await db.from('messages').insert({
+      const { data: webMessage, error: sendErr } = await db.from('messages').insert({
         conversation_id: conversationId,
         sender_type: 'bot',
         content_type: 'text',
