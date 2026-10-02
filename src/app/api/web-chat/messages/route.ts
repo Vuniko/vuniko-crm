@@ -5,7 +5,8 @@ import { dispatchInboundToAiReply } from "@/lib/ai/auto-reply";
 import { saveLeadIntent } from "@/lib/web-chat/intent";
 import { syncLeadToPipeline } from "@/lib/web-chat/pipeline";
 import { captureConversationalLead } from "@/lib/web-chat/lead-capture";
-import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";\nimport { advanceBookingRequest } from "@/lib/web-chat/booking";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { advanceBookingRequest } from "@/lib/web-chat/booking";
 
 function adminClient() {
   return createClient(
@@ -110,7 +111,16 @@ export async function POST(request: Request) {
     }).eq("id", conversationId);
   }
 
-  const bookingState = await advanceBookingRequest({\n    db: supabase,\n    accountId: widget.account_id,\n    conversationId: conversationId!,\n    contactId: contactId!,\n    text,\n    intent: intent.intent,\n  });\n\n  const leadState = await captureConversationalLead({
+  const bookingState = await advanceBookingRequest({
+    db: supabase,
+    accountId: widget.account_id,
+    conversationId: conversationId!,
+    contactId: contactId!,
+    text,
+    intent: intent.intent,
+  });
+
+  const leadState = await captureConversationalLead({
     db: supabase,
     widgetId: widget.id,
     visitorId: visitor?.id ?? null,
@@ -143,7 +153,8 @@ export async function POST(request: Request) {
             conversationId: conversationId!,
             contactId: contactId!,
             configOwnerUserId: account.owner_user_id,
-            leadCaptureState: leadState,\n            bookingState,
+            leadCaptureState: leadState,
+            bookingState,
           });
         } catch (error) {
           console.error("[web-chat] AI auto-reply failed:", error);
