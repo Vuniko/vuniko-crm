@@ -1,27 +1,31 @@
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
+import { loadAiConfig } from '@/lib/ai/config'
+import { generateReply } from '@/lib/ai/generate'
+import { AiError, type ChatMessage } from '@/lib/ai/types'
 
 export const runtime = 'nodejs'
 
-type Item = { id: string; name: string; price: number; quantity: number }
+const PUBLIC_CHAT_SYSTEM_PROMPT = `
+Eres el asistente web de VUNIKO. Atiendes clientes de forma clara, breve y profesional.
+Responde en el idioma del cliente. Tu objetivo es resolver consultas y captar la intención
+comercial sin inventar precios, productos, disponibilidad ni políticas que no aparezcan
+en el contexto del negocio. Si falta información importante, dilo y pide el dato necesario.
+Si el cliente pide hablar con una persona o no puedes resolver algo con seguridad, incluye
+[[HANDOFF]] al final de tu respuesta.
+`.trim()
 
-const catalog: Omit<Item, 'quantity'>[] = [
-  { id: 'demo-kit', name: 'Kit de bienvenida', price: 49 },
-  { id: 'demo-consulta', name: 'Consulta comercial', price: 120 },
-]
-
-function reply(message: string, items: Item[], name?: string) {
-  const text = message.toLowerCase()
-  if (!items.length) {
-    const product = catalog.find((p) => text.includes('kit') || text.includes('bienvenida')) ?? catalog[0]
-    const quantity = Math.max(1, Number(text.match(/\d+/)?.[0] ?? 1))
-    return { content: `Perfecto. ${quantity} × ${product.name} son S/ ${(product.price * quantity).toFixed(2)}. ¿Confirmas el pedido?`, items: [{ ...product, quantity }] }
-  }
-  if (/(confirm|sí|si|adelante|acepto)/i.test(text)) {
-    const total = items.reduce((sum, item) => sum + item.price * item.quantity, 0)
-    return { content: `¡Pedido confirmado${name ? `, ${name}` : ''}! Total: S/ ${total.toFixed(2)}. El equipo de VUNIKO se pondrá en contacto contigo.`, items }
-  }
-  return { content: 'Tengo tu pedido preparado. Responde “confirmar” para registrarlo, o dime qué deseas cambiar.', items }
+function toAiMessages(
+  history: Array<{ role: string; content: string }>,
+  currentMessage: string,
+): ChatMessage[] {
+  return [
+    ...history.map((item) => ({
+      role: item.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+      content: item.content,
+    })),
+    { role: 'user' as const, content: currentMessage },
+  ]
 }
 
 export async function POST(request: Request) {
@@ -42,17 +46,67 @@ export async function POST(request: Request) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     session = data
   }
-  const { data: history } = await admin.from('public_chat_messages').select('role,content').eq('session_id', session.id).order('created_at', { ascending: true })
-  const items: Item[] = Array.isArray(session.cart) ? session.cart : []
-  const result = reply(message, items, body.customerName ?? session.customer_name)
-  await admin.from('public_chat_messages').insert([{ session_id: session.id, role: 'customer', content: message }, { session_id: session.id, role: 'assistant', content: result.content }])
-  const confirmed = items.length > 0 && /(confirm|sí|si|adelante|acepto)/i.test(message)
-  if (confirmed) {
-    const total = result.items.reduce((sum, item) => sum + item.price * item.quantity, 0)
-    await admin.from('public_orders').insert({ session_id: session.id, account_id: accountId, customer_name: body.customerName ?? session.customer_name ?? 'Cliente web', customer_email: body.customerEmail ?? session.customer_email, items: result.items, total, status: 'confirmed' })
-    await admin.from('public_chat_sessions').update({ cart: result.items, status: 'completed' }).eq('id', session.id)
-  } else {
-    await admin.from('public_chat_sessions').update({ cart: result.items, customer_name: body.customerName ?? session.customer_name, customer_email: body.customerEmail ?? session.customer_email }).eq('id', session.id)
+  const { data: history } = await admin
+    .from('public_chat_messages')
+    .select('role,content')
+    .eq('session_id', session.id)
+    .order('created_at', { ascending: true })
+
+  const aiConfig = await loadAiConfig(admin, accountId)
+  if (!aiConfig) {
+    return NextResponse.json(
+      { error: 'El asistente de IA todavía no está configurado para este negocio.' },
+      { status: 503 },
+    )
   }
-  return NextResponse.json({ sessionToken: session.visitor_token, messages: [...(history ?? []), { role: 'customer', content: message }, { role: 'assistant', content: result.content }], order: confirmed ? { items: result.items, total: result.items.reduce((sum, item) => sum + item.price * item.quantity, 0) } : null })
+
+  let generated
+  try {
+    generated = await generateReply({
+      config: aiConfig,
+      systemPrompt: [PUBLIC_CHAT_SYSTEM_PROMPT, aiConfig.systemPrompt]
+        .filter(Boolean)
+        .join('\n\n'),
+      messages: toAiMessages(history ?? [], message),
+    })
+  } catch (error) {
+    const aiError = error instanceof AiError ? error : null
+    console.error('[public chat] AI generation failed', error)
+    return NextResponse.json(
+      { error: 'No pude responder ahora. Intenta nuevamente en unos segundos.' },
+      { status: aiError?.status ?? 502 },
+    )
+  }
+
+  const assistantContent =
+    generated.text ||
+    'Voy a derivar esta conversación a una persona del equipo para ayudarte.'
+
+  const { error: insertError } = await admin.from('public_chat_messages').insert([
+    { session_id: session.id, role: 'customer', content: message },
+    { session_id: session.id, role: 'assistant', content: assistantContent },
+  ])
+  if (insertError) {
+    console.error('[public chat] failed to persist messages', insertError)
+    return NextResponse.json({ error: 'No pude guardar la conversación.' }, { status: 500 })
+  }
+
+  await admin
+    .from('public_chat_sessions')
+    .update({
+      customer_name: body.customerName ?? session.customer_name,
+      customer_email: body.customerEmail ?? session.customer_email,
+      status: generated.handoff ? 'handoff' : session.status,
+    })
+    .eq('id', session.id)
+
+  return NextResponse.json({
+    sessionToken: session.visitor_token,
+    messages: [
+      ...(history ?? []),
+      { role: 'customer', content: message },
+      { role: 'assistant', content: assistantContent },
+    ],
+    handoff: generated.handoff,
+  })
 }
