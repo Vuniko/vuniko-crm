@@ -46,6 +46,7 @@ export async function syncLeadToPipeline(args: {
   }
 
   const { data: contact } = await db.from('contacts').select('name,email,phone').eq('id',contactId).maybeSingle()
+  const { data: profile } = await db.from('profiles').select('default_currency').eq('user_id', ownerUserId).maybeSingle()
   const label = contact?.name || contact?.email || contact?.phone || 'Website lead'
   await db.from('deals').insert({
     user_id: ownerUserId,
@@ -56,7 +57,7 @@ export async function syncLeadToPipeline(args: {
     conversation_id: conversationId,
     title: `${label} — Web lead`,
     value: 0,
-    currency: 'USD',
+    currency: profile?.default_currency || 'USD',
     status: 'open',
     source: 'web_chat_ai',
     source_intent: intent,
