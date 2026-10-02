@@ -1,7 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, List, Loader2, Phone, Scissors, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, List, Loader2, Phone, Scissors, Settings2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -106,9 +107,14 @@ export default function BookingsPage() {
 
   return (
     <div className="space-y-6 p-4 sm:p-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-foreground">Reservas</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Solicitudes captadas por Wally y gestionadas por tu equipo.</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-foreground">Reservas</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Solicitudes captadas por Wally y gestionadas por tu equipo.</p>
+        </div>
+        <Button variant="outline" render={<Link href="/bookings/availability" />}>
+          <Settings2 className="size-4" /> Disponibilidad
+        </Button>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
