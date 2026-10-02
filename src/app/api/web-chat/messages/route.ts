@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "crypto";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { dispatchInboundToAiReply } from "@/lib/ai/auto-reply";
+import { saveLeadIntent } from "@/lib/web-chat/intent";
 
 function adminClient() {
   return createClient(
@@ -89,6 +90,8 @@ export async function POST(request: Request) {
     updated_at: now,
     unread_count: 1,
   }).eq("id", conversationId);
+
+  await saveLeadIntent(supabase, conversationId!, text);
 
   const { data: account } = await supabase
     .from("accounts")
