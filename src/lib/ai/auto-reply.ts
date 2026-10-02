@@ -143,9 +143,7 @@ export async function dispatchInboundToAiReply(
     const bookingContext = conv.channel === 'web' ? bookingPrompt(bookingState) : null
     const userPrompt = [config.systemPrompt, businessProfile, capturePrompt, bookingContext]
       .filter((part): part is string => Boolean(part?.trim()))
-      .join('
-
-')
+      .join('\\n\\n')
 
     const systemPrompt = buildSystemPrompt({
       userPrompt,
