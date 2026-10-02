@@ -1,7 +1,7 @@
 import { createHash } from "crypto";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";\nimport { webChatRealtimeTopic } from "@/lib/web-chat/realtime";
 
 function adminClient() {
   return createClient(
@@ -44,5 +44,5 @@ export async function GET(request: Request) {
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: "Could not load messages" }, { status: 500 });
-  return NextResponse.json({ messages: data ?? [] });
+  return NextResponse.json({ messages: data ?? [], realtimeTopic: webChatRealtimeTopic(visitor.conversation_id) });
 }
