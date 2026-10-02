@@ -14,7 +14,7 @@ import {
   loadAccountMetaCredentials,
 } from '@/lib/flows/meta-send'
 import { sendTypingIndicator } from '@/lib/whatsapp/meta-api'
-import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'\nimport { broadcastWebChatMessage } from '@/lib/web-chat/realtime'
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'\nimport { broadcastWebChatMessage } from '@/lib/web-chat/realtime'\nimport { bookingPrompt, type BookingState } from '@/lib/web-chat/booking'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -138,7 +138,7 @@ export async function dispatchInboundToAiReply(
     const capturePrompt = conv.channel === 'web' && leadCaptureState
       ? leadCapturePrompt(leadCaptureState)
       : null
-    const userPrompt = [config.systemPrompt, businessProfile, capturePrompt]
+    const bookingContext = conv.channel === 'web' ? bookingPrompt(bookingState) : null\n    const userPrompt = [config.systemPrompt, businessProfile, capturePrompt, bookingContext]
       .filter((part): part is string => Boolean(part?.trim()))
       .join('\n\n')
 
