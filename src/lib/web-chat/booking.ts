@@ -4,6 +4,9 @@ export type BookingState = {
   active: boolean;
   complete: boolean;
   service?: string | null;
+  serviceId?: string | null;
+  serviceDurationMinutes?: number | null;
+  servicePrice?: number | null;
   requestedDate?: string | null;
   requestedTime?: string | null;
   customerName?: string | null;
@@ -44,16 +47,23 @@ function normalizeTime(value:string): string | null {
 function minutes(v:string){ const [h,m]=v.slice(0,5).split(':').map(Number); return h*60+m; }
 function timeFromMinutes(v:number){ return `${pad(Math.floor(v/60))}:${pad(v%60)}`; }
 
-async function checkAvailability(db:Db, accountId:string, date:string, time:string, conversationId:string){
+async function checkAvailability(db:Db, accountId:string, date:string, time:string, conversationId:string, durationMinutes:number){
   const day=new Date(date+'T12:00:00').getDay();
   const {data:schedule}=await db.from('booking_availability').select('is_open,opens_at,closes_at,slot_minutes').eq('account_id',accountId).eq('weekday',day).maybeSingle();
   if(!schedule?.is_open) return {available:false, alternatives:[] as string[]};
   const start=minutes(schedule.opens_at), end=minutes(schedule.closes_at), slot=schedule.slot_minutes||30, wanted=minutes(time);
-  const {data:busy}=await db.from('booking_requests').select('conversation_id,requested_time,status').eq('account_id',accountId).eq('requested_date',date).in('status',['pending_confirmation','confirmed']);
-  const occupied=new Set((busy||[]).filter((b:any)=>b.conversation_id!==conversationId).map((b:any)=>normalizeTime(b.requested_time||'')).filter(Boolean));
-  const valid=wanted>=start && wanted+slot<=end && !occupied.has(time);
+  const {data:busy}=await db.from('booking_requests').select('conversation_id,requested_time,service,status').eq('account_id',accountId).eq('requested_date',date).in('status',['pending_confirmation','confirmed']);
+  const {data:services}=await db.from('booking_services').select('name,duration_minutes').eq('account_id',accountId).eq('is_active',true);
+  const durations=new Map((services||[]).map((s:any)=>[String(s.name).toLowerCase(),Number(s.duration_minutes)||slot]));
+  const intervals=(busy||[]).filter((b:any)=>b.conversation_id!==conversationId).map((b:any)=>{
+    const normalized=normalizeTime(b.requested_time||''); if(!normalized)return null;
+    const busyStart=minutes(normalized); const busyDuration=durations.get(String(b.service||'').toLowerCase())||slot;
+    return {start:busyStart,end:busyStart+busyDuration};
+  }).filter(Boolean) as {start:number;end:number}[];
+  const free=(candidate:number)=>candidate>=start && candidate+durationMinutes<=end && !intervals.some(b=>candidate<b.end && candidate+durationMinutes>b.start);
+  const valid=free(wanted);
   const alternatives:string[]=[];
-  for(let t=start;t+slot<=end && alternatives.length<3;t+=slot){ const candidate=timeFromMinutes(t); if(!occupied.has(candidate) && candidate!==time) alternatives.push(candidate); }
+  for(let t=start;t+durationMinutes<=end && alternatives.length<3;t+=slot){ if(free(t)&&t!==wanted) alternatives.push(timeFromMinutes(t)); }
   return {available:valid, alternatives};
 }
 
@@ -63,8 +73,11 @@ export async function advanceBookingRequest(args:{db:Db;accountId:string;convers
   if(!existing&&intent!=='booking')return {active:false,complete:false};
   const row:any=existing??{account_id:accountId,conversation_id:conversationId,contact_id:contactId,status:'collecting'};
   const clean=text.trim();
-  if(!row.service&&intent==='booking'&&!/reserv|turno|cita|agend/i.test(clean))row.service=clean;
-  else if(!row.service&&existing)row.service=clean;
+  const {data:serviceRows}=await db.from('booking_services').select('id,name,price,duration_minutes').eq('account_id',accountId).eq('is_active',true).order('position').order('name');
+  const activeServices=serviceRows||[];
+  const normalizedClean=clean.toLowerCase();
+  const matchedService=activeServices.find((s:any)=>normalizedClean===String(s.name).toLowerCase() || normalizedClean.includes(String(s.name).toLowerCase()));
+  if(!row.service&&matchedService)row.service=matchedService.name;
   else if(!row.requested_date&&dateLike.test(clean))row.requested_date=normalizeDate(clean.match(dateLike)?.[0]??clean)??clean;
   else if(!row.requested_time&&timeLike.test(clean))row.requested_time=normalizeTime(clean)??clean;
   else if(!row.customer_name&&!phoneLike.test(clean))row.customer_name=clean;
@@ -75,7 +88,9 @@ export async function advanceBookingRequest(args:{db:Db;accountId:string;convers
     const date=normalizeDate(row.requested_date); const time=normalizeTime(row.requested_time);
     if(date&&time){
       row.requested_date=date; row.requested_time=time;
-      const availability=await checkAvailability(db,accountId,date,time,conversationId);
+      const selectedService=activeServices.find((s:any)=>String(s.name).toLowerCase()===String(row.service||'').toLowerCase());
+      const duration=Number(selectedService?.duration_minutes)||30;
+      const availability=await checkAvailability(db,accountId,date,time,conversationId,duration);
       availabilityVerified=availability.available; alternatives=availability.alternatives;
       if(!availabilityVerified) { availabilityRejected=true; row.requested_time=null; }
     }
@@ -86,7 +101,10 @@ export async function advanceBookingRequest(args:{db:Db;accountId:string;convers
   await db.from('booking_requests').upsert(row,{onConflict:'conversation_id'});
 
   let nextQuestion:string|null=null;
-  if(!row.service)nextQuestion='¿Qué servicio querés reservar?';
+  if(!row.service){
+    if(activeServices.length) nextQuestion='¿Qué servicio querés reservar?\n'+activeServices.map((s:any)=>`• ${s.name} — S/ ${Number(s.price).toFixed(Number(s.price)%1?2:0)} — ${s.duration_minutes} min`).join('\n');
+    else nextQuestion='Todavía no hay servicios disponibles para reservar. Podés pedir hablar con una persona.';
+  }
   else if(!row.requested_date)nextQuestion='¿Para qué día te gustaría?';
   else if(!row.requested_time&&availabilityRejected&&alternatives.length)nextQuestion=`Ese horario no está disponible. Tengo libres: ${alternatives.join(', ')}. ¿Cuál preferís?`;
   else if(!row.requested_time&&availabilityRejected)nextQuestion='Ese horario no está disponible. ¿Qué otro horario preferís?';
@@ -95,7 +113,8 @@ export async function advanceBookingRequest(args:{db:Db;accountId:string;convers
   else if(!row.customer_phone)nextQuestion='¿Cuál es tu teléfono o WhatsApp para contactarte?';
   else nextQuestion='Listo. El horario está disponible y registré tu solicitud. El negocio debe confirmarla para que el turno quede confirmado.';
 
-  return {active:true,complete,service:row.service,requestedDate:row.requested_date,requestedTime:row.requested_time,customerName:row.customer_name,customerPhone:row.customer_phone,nextQuestion,availabilityVerified,alternatives};
+  const selectedService=activeServices.find((s:any)=>String(s.name).toLowerCase()===String(row.service||'').toLowerCase());
+  return {active:true,complete,service:row.service,serviceId:selectedService?.id??null,serviceDurationMinutes:selectedService?.duration_minutes??null,servicePrice:selectedService?Number(selectedService.price):null,requestedDate:row.requested_date,requestedTime:row.requested_time,customerName:row.customer_name,customerPhone:row.customer_phone,nextQuestion,availabilityVerified,alternatives};
 }
 
 export function bookingPrompt(state?:BookingState):string|null{
