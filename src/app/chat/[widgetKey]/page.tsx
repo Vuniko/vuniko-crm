@@ -1,40 +1,76 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, use, useCallback, useEffect, useRef, useState } from "react";
 
-type ChatMessage = { id: string; role: "visitor" | "business"; text: string };
+type WireMessage = {
+  id: string;
+  sender_type: "customer" | "agent" | "bot";
+  content_type: string;
+  content_text: string | null;
+  created_at: string;
+};
 
 export default function WebChatPage({
   params,
 }: {
   params: Promise<{ widgetKey: string }>;
 }) {
+  const { widgetKey } = use(params);
   const [open, setOpen] = useState(true);
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const widgetKey = useMemo(() => params.then((p) => p.widgetKey), [params]);
+  const [messages, setMessages] = useState<WireMessage[]>([]);
+  const [visitorToken, setVisitorToken] = useState<string | null>(null);
+  const latestRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const key = `vuniko:web-chat:${widgetKey}`;
+    const stored = localStorage.getItem(key);
+    if (stored) setVisitorToken(stored);
+  }, [widgetKey]);
+
+  const refresh = useCallback(async () => {
+    if (!visitorToken) return;
+    const query = new URLSearchParams({ widgetKey, visitorToken });
+    if (latestRef.current) query.set("after", latestRef.current);
+    const response = await fetch(`/api/web-chat/messages/list?${query.toString()}`, {
+      cache: "no-store",
+    });
+    if (!response.ok) return;
+    const payload = (await response.json()) as { messages?: WireMessage[] };
+    const incoming = payload.messages ?? [];
+    if (!incoming.length) return;
+    setMessages((current) => {
+      const ids = new Set(current.map((message) => message.id));
+      return [...current, ...incoming.filter((message) => !ids.has(message.id))];
+    });
+    latestRef.current = incoming[incoming.length - 1]?.created_at ?? latestRef.current;
+  }, [visitorToken, widgetKey]);
+
+  useEffect(() => {
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 2000);
+    return () => window.clearInterval(timer);
+  }, [refresh]);
 
   async function sendMessage(event: FormEvent) {
     event.preventDefault();
     const text = draft.trim();
     if (!text) return;
     setDraft("");
-    const optimistic = { id: crypto.randomUUID(), role: "visitor" as const, text };
-    setMessages((current) => [...current, optimistic]);
 
-    const key = await widgetKey;
     const response = await fetch("/api/web-chat/messages", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ widgetKey: key, text }),
+      body: JSON.stringify({ widgetKey, text, visitorToken }),
     });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) return;
 
-    if (!response.ok) {
-      setMessages((current) => [
-        ...current,
-        { id: crypto.randomUUID(), role: "business", text: "We couldn't send that message. Please try again." },
-      ]);
+    if (payload.visitorToken && payload.visitorToken !== visitorToken) {
+      localStorage.setItem(`vuniko:web-chat:${widgetKey}`, payload.visitorToken);
+      setVisitorToken(payload.visitorToken);
     }
+    await refresh();
   }
 
   if (!open) {
@@ -55,7 +91,9 @@ export default function WebChatPage({
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
           <div className="max-w-[85%] rounded-2xl bg-neutral-100 p-3 text-sm">Hi! 👋 How can we help?</div>
           {messages.map((message) => (
-            <div key={message.id} className={message.role === "visitor" ? "ml-auto max-w-[85%] rounded-2xl bg-black p-3 text-sm text-white" : "max-w-[85%] rounded-2xl bg-neutral-100 p-3 text-sm"}>{message.text}</div>
+            <div key={message.id} className={message.sender_type === "customer" ? "ml-auto max-w-[85%] rounded-2xl bg-black p-3 text-sm text-white" : "max-w-[85%] rounded-2xl bg-neutral-100 p-3 text-sm"}>
+              {message.content_text}
+            </div>
           ))}
         </div>
         <form onSubmit={sendMessage} className="flex gap-2 border-t p-3">
