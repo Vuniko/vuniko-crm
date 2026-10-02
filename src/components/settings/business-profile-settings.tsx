@@ -6,14 +6,14 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 
 const fields = [
-  ['business_name','Business name','input'],
-  ['description','What does your business do?','textarea'],
-  ['location_text','Location / service area','input'],
-  ['business_hours','Business hours','textarea'],
-  ['services','Services','textarea'],
-  ['pricing','Prices','textarea'],
-  ['faqs','Frequently asked questions','textarea'],
-  ['policies','Policies','textarea'],
+  ['business_name','Nombre del negocio','input'],
+  ['description','¿A qué se dedica tu negocio?','textarea'],
+  ['location_text','Ubicación / zona de atención','input'],
+  ['business_hours','Horarios de atención','textarea'],
+  ['services','Servicios','textarea'],
+  ['pricing','Precios','textarea'],
+  ['faqs','Preguntas frecuentes','textarea'],
+  ['policies','Políticas','textarea'],
 ] as const
 
 export function BusinessProfileSettings() {
@@ -30,8 +30,8 @@ export function BusinessProfileSettings() {
   }
 
   return <div className="space-y-6">
-    <div><h2 className="text-xl font-semibold">Business profile</h2>
-      <p className="text-sm text-muted-foreground">VUNIKO uses this information to answer customers without inventing prices, hours or policies.</p></div>
+    <div><h2 className="text-xl font-semibold">Perfil del negocio</h2>
+      <p className="text-sm text-muted-foreground">VUNIKO usa esta información para responder a tus clientes sin inventar precios, horarios ni políticas.</p></div>
     <div className="grid gap-5">
       {fields.map(([key,label,kind])=><label key={key} className="grid gap-2 text-sm font-medium">{label}
         {kind==='input'
@@ -39,7 +39,7 @@ export function BusinessProfileSettings() {
           : <Textarea rows={4} value={form[key] ?? ''} onChange={e=>setForm(v=>({...v,[key]:e.target.value}))}/>}
       </label>)}
     </div>
-    <div className="flex items-center gap-3"><Button onClick={save} disabled={saving}>{saving?'Saving…':'Save business profile'}</Button>
-      {saved && <span className="text-sm text-muted-foreground">Saved. Gemini will use this context.</span>}</div>
+    <div className="flex items-center gap-3"><Button onClick={save} disabled={saving}>{saving?'Guardando…':'Guardar perfil del negocio'}</Button>
+      {saved && <span className="text-sm text-muted-foreground">Guardado. La IA usará esta información como contexto.</span>}</div>
   </div>
 }
