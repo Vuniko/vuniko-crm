@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";\nimport { broadcastWebChatMessage } from "@/lib/web-chat/realtime";
 
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Could not send message" }, { status: 500 });
   }
 
-  await supabase.from("conversations").update({
+  await broadcastWebChatMessage(conversation.id, message);\n\n  await supabase.from("conversations").update({
     last_message_text: text,
     last_message_at: now,
     updated_at: now,
