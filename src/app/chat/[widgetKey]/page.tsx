@@ -19,7 +19,7 @@ export default function WebChatPage({
   const [open, setOpen] = useState(true);
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<WireMessage[]>([]);
-  const [visitorToken, setVisitorToken] = useState<string | null>(null);
+  const [visitorToken, setVisitorToken] = useState<string | null>(null);\n  const [waitingForReply, setWaitingForReply] = useState(false);
   const [config, setConfig] = useState({ name: "VUNIKO", welcome_message: "Hi! 👋 How can we help?", accent_color: "#111111" });
   const latestRef = useRef<string | null>(null);
 
@@ -44,10 +44,10 @@ export default function WebChatPage({
     const response = await fetch(`/api/web-chat/messages/list?${query.toString()}`, {
       cache: "no-store",
     });
-    if (!response.ok) return;
+    if (!response.ok) { setWaitingForReply(false); return; }
     const payload = (await response.json()) as { messages?: WireMessage[] };
     const incoming = payload.messages ?? [];
-    if (!incoming.length) return;
+    if (!incoming.length) return;\n    if (incoming.some((message) => message.sender_type === "agent" || message.sender_type === "bot")) setWaitingForReply(false);
     setMessages((current) => {
       const ids = new Set(current.map((message) => message.id));
       return [...current, ...incoming.filter((message) => !ids.has(message.id))];
@@ -57,9 +57,9 @@ export default function WebChatPage({
 
   useEffect(() => {
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 2000);
+    const timer = window.setInterval(() => void refresh(), waitingForReply ? 650 : 2000);
     return () => window.clearInterval(timer);
-  }, [refresh]);
+  }, [refresh, waitingForReply]);
 
   async function sendMessage(event: FormEvent) {
     event.preventDefault();
