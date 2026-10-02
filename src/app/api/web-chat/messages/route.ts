@@ -7,6 +7,7 @@ import { syncLeadToPipeline } from "@/lib/web-chat/pipeline";
 import { captureConversationalLead } from "@/lib/web-chat/lead-capture";
 import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 import { advanceBookingRequest } from "@/lib/web-chat/booking";
+import { broadcastWebChatMessage } from "@/lib/web-chat/realtime";
 
 function adminClient() {
   return createClient(
@@ -129,6 +130,39 @@ export async function POST(request: Request) {
     intent: intent.intent,
   });
 
+  // Booking conversations use the deterministic booking engine instead of
+  // the LLM. This keeps the flow fast and available even if the AI provider
+  // is overloaded.
+  let bookingReplied = false;
+  if (bookingState.active && intent.intent !== "human" && bookingState.nextQuestion) {
+    const replyText = bookingState.nextQuestion;
+    const { data: bookingReply, error: bookingReplyError } = await supabase
+      .from("messages")
+      .insert({
+        conversation_id: conversationId,
+        sender_type: "bot",
+        content_type: "text",
+        content_text: replyText,
+        status: "sent",
+        ai_generated: false,
+      })
+      .select("id, sender_type, content_type, content_text, created_at")
+      .single();
+
+    if (!bookingReplyError && bookingReply) {
+      bookingReplied = true;
+      const replyAt = bookingReply.created_at ?? new Date().toISOString();
+      await supabase.from("conversations").update({
+        last_message_text: replyText,
+        last_message_at: replyAt,
+        updated_at: replyAt,
+      }).eq("id", conversationId);
+      await broadcastWebChatMessage(conversationId!, bookingReply);
+    } else {
+      console.error("[web-chat] deterministic booking reply failed:", bookingReplyError);
+    }
+  }
+
   const { data: account } = await supabase
     .from("accounts")
     .select("owner_user_id")
@@ -145,7 +179,7 @@ export async function POST(request: Request) {
       intent: intent.intent,
     });
 
-    if (intent.intent !== "human") {
+    if (intent.intent !== "human" && !bookingReplied) {
       after(async () => {
         try {
           await dispatchInboundToAiReply({
