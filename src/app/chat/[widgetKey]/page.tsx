@@ -120,7 +120,16 @@ export default function WebChatPage({
           <button onClick={() => setOpen(false)} aria-label="Close chat">×</button>
         </header>
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
-          <div className="max-w-[85%] rounded-2xl bg-neutral-100 p-3 text-sm text-neutral-950">{config.welcome_message}</div>\n          {messages.length === 0 && !waitingForReply && (\n            <div className="flex flex-wrap gap-2 pt-1">\n              {quickActions.map((action) => (\n                <button key={action.label} type="button" onClick={() => void sendText(action.message)} className="rounded-full border border-neutral-200 bg-white px-3 py-2 text-xs font-medium text-neutral-800 shadow-sm transition hover:bg-neutral-50 active:scale-[.98]">\n                  {action.label}\n                </button>\n              ))}\n            </div>\n          )}
+          <div className="max-w-[85%] rounded-2xl bg-neutral-100 p-3 text-sm text-neutral-950">{config.welcome_message}</div>
+          {messages.length === 0 && !waitingForReply && (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {quickActions.map((action) => (
+                <button key={action.label} type="button" onClick={() => void sendText(action.message)} className="rounded-full border border-neutral-200 bg-white px-3 py-2 text-xs font-medium text-neutral-800 shadow-sm transition hover:bg-neutral-50 active:scale-[.98]">
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          )}
           {messages.map((message) => (
             <div key={message.id} className={message.sender_type === "customer" ? "ml-auto max-w-[85%] rounded-2xl p-3 text-sm text-white" : "max-w-[85%] rounded-2xl bg-neutral-100 p-3 text-sm text-neutral-950"} style={message.sender_type === "customer" ? { backgroundColor: config.accent_color } : undefined}>
               {message.content_text}
