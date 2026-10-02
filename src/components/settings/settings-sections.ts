@@ -52,25 +52,25 @@ export interface SectionMeta {
 }
 
 export const SECTION_META: Record<SettingsSection, SectionMeta> = {
-  overview: { id: 'overview', label: 'Overview', icon: LayoutGrid, group: 'top' },
-  profile: { id: 'profile', label: 'Your profile', icon: User, group: 'account' },
-  security: { id: 'security', label: 'Login & security', icon: Shield, group: 'account' },
-  appearance: { id: 'appearance', label: 'Appearance', icon: Palette, group: 'account' },
-  business: { id: 'business', label: 'Business profile', icon: Building2, group: 'workspace' },
-  'web-chat': { id: 'web-chat', label: 'Web chat', icon: MessageCircle, group: 'workspace' },
+  overview: { id: 'overview', label: 'Resumen', icon: LayoutGrid, group: 'top' },
+  profile: { id: 'profile', label: 'Tu perfil', icon: User, group: 'account' },
+  security: { id: 'security', label: 'Acceso y seguridad', icon: Shield, group: 'account' },
+  appearance: { id: 'appearance', label: 'Apariencia', icon: Palette, group: 'account' },
+  business: { id: 'business', label: 'Perfil del negocio', icon: Building2, group: 'workspace' },
+  'web-chat': { id: 'web-chat', label: 'Chat web', icon: MessageCircle, group: 'workspace' },
   whatsapp: { id: 'whatsapp', label: 'WhatsApp', icon: PlugZap, group: 'workspace' },
-  templates: { id: 'templates', label: 'Templates', icon: FileText, group: 'workspace' },
-  'quick-replies': { id: 'quick-replies', label: 'Quick replies', icon: Zap, group: 'workspace' },
-  fields: { id: 'fields', label: 'Fields & tags', icon: Tags, group: 'workspace' },
-  deals: { id: 'deals', label: 'Deals & currency', icon: Coins, group: 'workspace' },
-  members: { id: 'members', label: 'Team members', icon: UsersRound, group: 'workspace' },
-  api: { id: 'api', label: 'API keys', icon: KeyRound, group: 'workspace' },
+  templates: { id: 'templates', label: 'Plantillas', icon: FileText, group: 'workspace' },
+  'quick-replies': { id: 'quick-replies', label: 'Respuestas rápidas', icon: Zap, group: 'workspace' },
+  fields: { id: 'fields', label: 'Campos y etiquetas', icon: Tags, group: 'workspace' },
+  deals: { id: 'deals', label: 'Ventas y moneda', icon: Coins, group: 'workspace' },
+  members: { id: 'members', label: 'Miembros del equipo', icon: UsersRound, group: 'workspace' },
+  api: { id: 'api', label: 'Claves API', icon: KeyRound, group: 'workspace' },
 };
 
 export const RAIL_GROUPS: { label: string | null; group: SectionMeta['group'] }[] = [
   { label: null, group: 'top' },
-  { label: 'Account', group: 'account' },
-  { label: 'Workspace', group: 'workspace' },
+  { label: 'Cuenta', group: 'account' },
+  { label: 'Espacio de trabajo', group: 'workspace' },
 ];
 
 function isSection(value: string | null): value is SettingsSection {
