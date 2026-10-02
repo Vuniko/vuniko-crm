@@ -67,6 +67,7 @@ export async function dispatchInboundToAiReply(
   } = args
 
   try {
+    const startedAt = Date.now()
     const db = supabaseAdmin()
 
     const config = await loadAiConfig(db, accountId)
@@ -130,15 +131,19 @@ export async function dispatchInboundToAiReply(
       await showTypingIndicator(db, accountId, inboundMessageId)
     }
 
-    // Ground the reply in the account's knowledge base (best-effort).
-    const knowledge = await retrieveKnowledge(
-      db,
-      accountId,
-      config,
-      latestUserMessage(messages),
-    )
-
-    const businessProfile = await loadBusinessProfileContext(db, accountId)
+    // Knowledge retrieval and the business profile are independent DB/network
+    // work, so run them together instead of adding their latency serially.
+    const enrichmentStartedAt = Date.now()
+    const [knowledge, businessProfile] = await Promise.all([
+      retrieveKnowledge(
+        db,
+        accountId,
+        config,
+        latestUserMessage(messages),
+      ),
+      loadBusinessProfileContext(db, accountId),
+    ])
+    const enrichmentMs = Date.now() - enrichmentStartedAt
     const capturePrompt = conv.channel === 'web' && leadCaptureState
       ? leadCapturePrompt(leadCaptureState)
       : null
@@ -153,10 +158,18 @@ export async function dispatchInboundToAiReply(
       knowledge,
     })
 
+    const generationStartedAt = Date.now()
     const { text, handoff, usage } = await generateReply({
       config,
       systemPrompt,
       messages,
+    })
+    const generationMs = Date.now() - generationStartedAt
+    console.info('[ai latency]', {
+      channel: conv.channel,
+      enrichmentMs,
+      generationMs,
+      totalMs: Date.now() - startedAt,
     })
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
