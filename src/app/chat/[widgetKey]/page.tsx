@@ -20,9 +20,18 @@ export default function WebChatPage({
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<WireMessage[]>([]);
   const [visitorToken, setVisitorToken] = useState<string | null>(null);
+  const [config, setConfig] = useState({ name: "VUNIKO", welcome_message: "Hi! 👋 How can we help?", accent_color: "#111111" });
   const latestRef = useRef<string | null>(null);
 
   useEffect(() => {
+    void fetch(`/api/web-chat/widget/${widgetKey}`, { cache: "no-store" }).then(async (r) => {
+      if (!r.ok) return;
+      const j = await r.json();
+      if (j.widget) {
+        setConfig(j.widget);
+        window.parent.postMessage({ type: "vuniko:theme", color: j.widget.accent_color }, "*");
+      }
+    });
     const key = `vuniko:web-chat:${widgetKey}`;
     const stored = localStorage.getItem(key);
     if (stored) setVisitorToken(stored);
@@ -85,20 +94,20 @@ export default function WebChatPage({
     <main className="flex min-h-screen items-end justify-end bg-transparent p-4">
       <section className="flex h-[560px] w-full max-w-sm flex-col overflow-hidden rounded-3xl border bg-white shadow-2xl">
         <header className="flex items-center justify-between border-b p-4">
-          <div><p className="font-semibold">VUNIKO</p><p className="text-sm text-neutral-500">How can we help?</p></div>
+          <div><p className="font-semibold">{config.name}</p><p className="text-sm text-neutral-500">Online</p></div>
           <button onClick={() => setOpen(false)} aria-label="Close chat">×</button>
         </header>
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
-          <div className="max-w-[85%] rounded-2xl bg-neutral-100 p-3 text-sm">Hi! 👋 How can we help?</div>
+          <div className="max-w-[85%] rounded-2xl bg-neutral-100 p-3 text-sm">{config.welcome_message}</div>
           {messages.map((message) => (
-            <div key={message.id} className={message.sender_type === "customer" ? "ml-auto max-w-[85%] rounded-2xl bg-black p-3 text-sm text-white" : "max-w-[85%] rounded-2xl bg-neutral-100 p-3 text-sm"}>
+            <div key={message.id} className={message.sender_type === "customer" ? "ml-auto max-w-[85%] rounded-2xl p-3 text-sm text-white" : "max-w-[85%] rounded-2xl bg-neutral-100 p-3 text-sm"} style={message.sender_type === "customer" ? { backgroundColor: config.accent_color } : undefined}>
               {message.content_text}
             </div>
           ))}
         </div>
         <form onSubmit={sendMessage} className="flex gap-2 border-t p-3">
           <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Write a message…" className="min-w-0 flex-1 rounded-full border px-4 py-2 text-sm outline-none" />
-          <button className="rounded-full bg-black px-4 py-2 text-sm text-white" type="submit">Send</button>
+          <button className="rounded-full px-4 py-2 text-sm text-white" style={{ backgroundColor: config.accent_color }} type="submit">Send</button>
         </form>
       </section>
     </main>
