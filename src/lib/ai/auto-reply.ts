@@ -7,6 +7,7 @@ import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
+import { loadBusinessProfileContext } from './business-profile'
 import {
   engineSendText,
   loadAccountMetaCredentials,
@@ -130,8 +131,13 @@ export async function dispatchInboundToAiReply(
       latestUserMessage(messages),
     )
 
+    const businessProfile = await loadBusinessProfileContext(db, accountId)
+    const userPrompt = [config.systemPrompt, businessProfile]
+      .filter((part): part is string => Boolean(part?.trim()))
+      .join('\n\n')
+
     const systemPrompt = buildSystemPrompt({
-      userPrompt: config.systemPrompt,
+      userPrompt,
       mode: 'auto_reply',
       knowledge,
     })
