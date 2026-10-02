@@ -485,12 +485,15 @@ export function MessageThread({
       setReplyTo(null);
 
       try {
-        const res = await fetch("/api/whatsapp/send", {
+        const endpoint = conversation.channel === "web"
+          ? "/api/web-chat/reply"
+          : "/api/whatsapp/send";
+        const res = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             conversation_id: conversation.id,
-            message_type: "text",
+            ...(conversation.channel === "web" ? {} : { message_type: "text" }),
             content_text: text,
             reply_to_message_id: replyToId,
           }),
