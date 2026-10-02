@@ -1,10 +1,11 @@
 import { createHash, randomBytes } from "crypto";
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { dispatchInboundToAiReply } from "@/lib/ai/auto-reply";
 import { saveLeadIntent } from "@/lib/web-chat/intent";
 import { syncLeadToPipeline } from "@/lib/web-chat/pipeline";
 import { captureConversationalLead } from "@/lib/web-chat/lead-capture";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 function adminClient() {
   return createClient(
@@ -20,6 +21,10 @@ export async function POST(request: Request) {
   if (!body.widgetKey || !text || text.length > 4000) {
     return NextResponse.json({ error: "Invalid message" }, { status: 400 });
   }
+
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const visitorRate = checkRateLimit(`web-chat:${ip}:${body.widgetKey}`, { limit: 20, windowMs: 60_000 });
+  if (!visitorRate.success) return rateLimitResponse(visitorRate);
 
   const supabase = adminClient();
   const { data: widget } = await supabase
@@ -130,13 +135,21 @@ export async function POST(request: Request) {
       intent: intent.intent,
     });
 
-    if (intent.intent !== "human") void dispatchInboundToAiReply({
-      accountId: widget.account_id,
-      conversationId: conversationId!,
-      contactId: contactId!,
-      configOwnerUserId: account.owner_user_id,
-      leadCaptureState: leadState,
-    });
+    if (intent.intent !== "human") {
+      after(async () => {
+        try {
+          await dispatchInboundToAiReply({
+            accountId: widget.account_id,
+            conversationId: conversationId!,
+            contactId: contactId!,
+            configOwnerUserId: account.owner_user_id,
+            leadCaptureState: leadState,
+          });
+        } catch (error) {
+          console.error("[web-chat] AI auto-reply failed:", error);
+        }
+      });
+    }
   }
 
   return NextResponse.json({ ok: true, visitorToken, conversationId, message });
