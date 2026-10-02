@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, use, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, use, useCallback, useEffect, useRef, useState } from "react";\nimport { createClient } from "@/lib/supabase/client";
 
 type WireMessage = {
   id: string;
@@ -19,7 +19,7 @@ export default function WebChatPage({
   const [open, setOpen] = useState(true);
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<WireMessage[]>([]);
-  const [visitorToken, setVisitorToken] = useState<string | null>(null);\n  const [waitingForReply, setWaitingForReply] = useState(false);
+  const [visitorToken, setVisitorToken] = useState<string | null>(null);\n  const [waitingForReply, setWaitingForReply] = useState(false);\n  const [realtimeTopic, setRealtimeTopic] = useState<string | null>(null);
   const [config, setConfig] = useState({ name: "VUNIKO", welcome_message: "Hi! 👋 How can we help?", accent_color: "#111111" });
   const latestRef = useRef<string | null>(null);
 
@@ -45,7 +45,7 @@ export default function WebChatPage({
       cache: "no-store",
     });
     if (!response.ok) { setWaitingForReply(false); return; }
-    const payload = (await response.json()) as { messages?: WireMessage[] };
+    const payload = (await response.json()) as { messages?: WireMessage[]; realtimeTopic?: string };\n    if (payload.realtimeTopic) setRealtimeTopic(payload.realtimeTopic);
     const incoming = payload.messages ?? [];
     if (!incoming.length) return;\n    if (incoming.some((message) => message.sender_type === "agent" || message.sender_type === "bot")) setWaitingForReply(false);
     setMessages((current) => {
@@ -60,6 +60,23 @@ export default function WebChatPage({
     const timer = window.setInterval(() => void refresh(), waitingForReply ? 650 : 2000);
     return () => window.clearInterval(timer);
   }, [refresh, waitingForReply]);
+
+  useEffect(() => {
+    if (!realtimeTopic) return;
+    const supabase = createClient();
+    const channel = supabase
+      .channel(realtimeTopic)
+      .on("broadcast", { event: "message" }, ({ payload }) => {
+        const message = payload as WireMessage;
+        if (!message?.id) return;
+        setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
+        latestRef.current = message.created_at ?? latestRef.current;
+        if (message.sender_type === "agent" || message.sender_type === "bot") setWaitingForReply(false);
+      })
+      .subscribe();
+
+    return () => { void supabase.removeChannel(channel); };
+  }, [realtimeTopic]);
 
   async function sendMessage(event: FormEvent) {
     event.preventDefault();
