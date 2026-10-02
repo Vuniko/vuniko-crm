@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "crypto";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { dispatchInboundToAiReply } from "@/lib/ai/auto-reply";
 
 function adminClient() {
   return createClient(
@@ -86,7 +87,23 @@ export async function POST(request: Request) {
     last_message_text: text,
     last_message_at: now,
     updated_at: now,
+    unread_count: 1,
   }).eq("id", conversationId);
+
+  const { data: account } = await supabase
+    .from("accounts")
+    .select("owner_user_id")
+    .eq("id", widget.account_id)
+    .single();
+
+  if (account?.owner_user_id) {
+    void dispatchInboundToAiReply({
+      accountId: widget.account_id,
+      conversationId: conversationId!,
+      contactId: contactId!,
+      configOwnerUserId: account.owner_user_id,
+    });
+  }
 
   return NextResponse.json({ ok: true, visitorToken, conversationId, message });
 }
