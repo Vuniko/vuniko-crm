@@ -92,21 +92,21 @@ export default function WebChatPage({
 
   return (
     <main className="flex min-h-screen items-end justify-end bg-transparent p-4">
-      <section className="flex h-[560px] w-full max-w-sm flex-col overflow-hidden rounded-3xl border bg-white shadow-2xl">
-        <header className="flex items-center justify-between border-b p-4">
+      <section className="flex h-[560px] w-full max-w-sm flex-col overflow-hidden rounded-3xl border bg-white text-neutral-950 shadow-2xl">
+        <header className="flex items-center justify-between border-b bg-white p-4 text-neutral-950">
           <div><p className="font-semibold">{config.name}</p><p className="text-sm text-neutral-500">Online</p></div>
           <button onClick={() => setOpen(false)} aria-label="Close chat">×</button>
         </header>
         <div className="flex-1 space-y-3 overflow-y-auto p-4">
-          <div className="max-w-[85%] rounded-2xl bg-neutral-100 p-3 text-sm">{config.welcome_message}</div>
+          <div className="max-w-[85%] rounded-2xl bg-neutral-100 p-3 text-sm text-neutral-950">{config.welcome_message}</div>
           {messages.map((message) => (
-            <div key={message.id} className={message.sender_type === "customer" ? "ml-auto max-w-[85%] rounded-2xl p-3 text-sm text-white" : "max-w-[85%] rounded-2xl bg-neutral-100 p-3 text-sm"} style={message.sender_type === "customer" ? { backgroundColor: config.accent_color } : undefined}>
+            <div key={message.id} className={message.sender_type === "customer" ? "ml-auto max-w-[85%] rounded-2xl p-3 text-sm text-white" : "max-w-[85%] rounded-2xl bg-neutral-100 p-3 text-sm text-neutral-950"} style={message.sender_type === "customer" ? { backgroundColor: config.accent_color } : undefined}>
               {message.content_text}
             </div>
           ))}
         </div>
         <form onSubmit={sendMessage} className="flex gap-2 border-t p-3">
-          <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Write a message…" className="min-w-0 flex-1 rounded-full border px-4 py-2 text-sm outline-none" />
+          <input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Write a message…" className="min-w-0 flex-1 rounded-full border bg-white px-4 py-2 text-sm text-neutral-950 placeholder:text-neutral-400 outline-none" />
           <button className="rounded-full px-4 py-2 text-sm text-white" style={{ backgroundColor: config.accent_color }} type="submit">Send</button>
         </form>
       </section>
