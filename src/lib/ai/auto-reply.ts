@@ -31,6 +31,7 @@ interface DispatchArgs {
    *  reply is generated. Optional so older callers keep working. */
   inboundMessageId?: string
   leadCaptureState?: LeadState
+  bookingState?: BookingState
 }
 
 /**
@@ -62,6 +63,7 @@ export async function dispatchInboundToAiReply(
     configOwnerUserId,
     inboundMessageId,
     leadCaptureState,
+    bookingState,
   } = args
 
   try {
@@ -227,8 +229,9 @@ export async function dispatchInboundToAiReply(
         content_text: text,
         status: 'sent',
         ai_generated: true,
-      })
-      if (sendErr) throw sendErr
+      }).select('id, sender_type, content_type, content_text, created_at').single()
+      if (sendErr || !webMessage) throw sendErr ?? new Error('Web message was not returned')
+      await broadcastWebChatMessage(conversationId, webMessage)
       await db.from('conversations').update({
         last_message_text: text,
         last_message_at: now,
