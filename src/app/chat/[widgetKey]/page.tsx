@@ -40,6 +40,11 @@ export default function WebChatPage({
     accent_color: '#111111',
   });
   const latestRef = useRef<string | null>(null);
+  const messageEndRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    messageEndRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [messages, pendingText, waitingForReply, open]);
 
   useEffect(() => {
     void fetch(`/api/web-chat/widget/${widgetKey}`, { cache: 'no-store' }).then(
@@ -231,8 +236,8 @@ export default function WebChatPage({
             ×
           </button>
         </header>
-        <div className="flex-1 space-y-3 overflow-y-auto p-4">
-          <div className="max-w-[85%] rounded-2xl bg-neutral-100 p-3 text-sm text-neutral-950">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+          <div className="max-w-[85%] rounded-2xl bg-neutral-100 p-3 text-sm wrap-anywhere whitespace-pre-wrap text-neutral-950">
             {config.welcome_message}
           </div>
           {messages.length === 0 && !waitingForReply && (
@@ -254,8 +259,8 @@ export default function WebChatPage({
               key={message.id}
               className={
                 message.sender_type === 'customer'
-                  ? 'ml-auto max-w-[85%] rounded-2xl p-3 text-sm text-white'
-                  : 'max-w-[85%] rounded-2xl bg-neutral-100 p-3 text-sm text-neutral-950'
+                  ? 'ml-auto max-w-[85%] rounded-2xl p-3 text-sm wrap-anywhere whitespace-pre-wrap text-white'
+                  : 'max-w-[85%] rounded-2xl bg-neutral-100 p-3 text-sm wrap-anywhere whitespace-pre-wrap text-neutral-950'
               }
               style={
                 message.sender_type === 'customer'
@@ -268,7 +273,7 @@ export default function WebChatPage({
           ))}
           {pendingText && (
             <div
-              className="ml-auto max-w-[85%] rounded-2xl p-3 text-sm text-white opacity-70"
+              className="ml-auto max-w-[85%] rounded-2xl p-3 text-sm wrap-anywhere whitespace-pre-wrap text-white opacity-70"
               style={{ backgroundColor: config.accent_color }}
             >
               {pendingText}
@@ -285,8 +290,12 @@ export default function WebChatPage({
               {sendError}
             </p>
           )}
+          <div ref={messageEndRef} />
         </div>
-        <form onSubmit={sendMessage} className="flex gap-2 border-t p-3">
+        <form
+          onSubmit={sendMessage}
+          className="flex shrink-0 gap-2 border-t p-3"
+        >
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
