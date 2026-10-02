@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { checkRateLimit, rateLimitResponse } from "@/lib/rate-limit";
 
 function adminClient() {
   return createClient(
@@ -18,6 +19,10 @@ export async function GET(request: Request) {
   if (!widgetKey || !visitorToken) {
     return NextResponse.json({ error: "Missing visitor credentials" }, { status: 400 });
   }
+
+  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const readRate = checkRateLimit(`web-chat-read:${ip}:${widgetKey}`, { limit: 45, windowMs: 60_000 });
+  if (!readRate.success) return rateLimitResponse(readRate);
 
   const supabase = adminClient();
   const { data: widget } = await supabase.from("web_chat_widgets")
