@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { dispatchInboundToAiReply } from "@/lib/ai/auto-reply";
 import { saveLeadIntent } from "@/lib/web-chat/intent";
+import { syncLeadToPipeline } from "@/lib/web-chat/pipeline";
 
 function adminClient() {
   return createClient(
@@ -91,7 +92,7 @@ export async function POST(request: Request) {
     unread_count: 1,
   }).eq("id", conversationId);
 
-  await saveLeadIntent(supabase, conversationId!, text);
+  const intent = await saveLeadIntent(supabase, conversationId!, text);
 
   const { data: account } = await supabase
     .from("accounts")
@@ -100,6 +101,15 @@ export async function POST(request: Request) {
     .single();
 
   if (account?.owner_user_id) {
+    await syncLeadToPipeline({
+      db: supabase,
+      accountId: widget.account_id,
+      ownerUserId: account.owner_user_id,
+      conversationId: conversationId!,
+      contactId: contactId!,
+      intent: intent.intent,
+    });
+
     void dispatchInboundToAiReply({
       accountId: widget.account_id,
       conversationId: conversationId!,
